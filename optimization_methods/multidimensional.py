@@ -1,0 +1,349 @@
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import Literal
+
+import numpy as np
+
+from optimization_methods.one_dimensional import (
+    dichotomy_search,
+    fibonacci_search,
+    golden_section_search,
+    passive_search,
+)
+from optimization_methods.results import FunctionCounter, MultiDimResult, as_float, as_vector
+
+LineSearchMethod = Literal["golden", "dichotomy", "fibonacci", "passive"]
+GradientStrategy = Literal["fixed", "backtracking", "scheduled", "steepest"]
+ConjugateFormula = Literal["fletcher_reeves", "polak_ribiere"]
+
+
+def vector_norm(x: np.ndarray) -> float:
+    return float(np.linalg.norm(x))
+
+
+def line_search_along(
+    f: Callable[[np.ndarray], float],
+    x: np.ndarray,
+    direction: np.ndarray,
+    interval: tuple[float, float] = (0.0, 2.0),
+    eps: float = 1e-5,
+    method: LineSearchMethod = "golden",
+) -> tuple[float, object]:
+    start, end = interval
+    if start >= end:
+        raise ValueError("line search interval must satisfy start < end.")
+
+    direction = as_vector(direction)
+    if vector_norm(direction) == 0:
+        return 0.0, None
+
+    def phi(alpha: float) -> float:
+        return as_float(f(x + alpha * direction))
+
+    if method == "golden":
+        result = golden_section_search(phi, start, end, eps=eps)
+    elif method == "dichotomy":
+        result = dichotomy_search(phi, start, end, eps=eps, delta=min(eps / 2, 1e-5))
+    elif method == "fibonacci":
+        result = fibonacci_search(phi, start, end, eps=eps)
+    elif method == "passive":
+        result = passive_search(phi, start, end, eps=eps)
+    else:
+        raise ValueError(f"Unknown line search method: {method}")
+    return result.x_min, result
+
+
+def coordinate_descent(
+    f: Callable[[np.ndarray], float],
+    x0,
+    eps: float = 1e-5,
+    max_iter: int = 200,
+    line_search_interval: tuple[float, float] = (-2.0, 2.0),
+    line_search_eps: float = 1e-5,
+    line_search_method: LineSearchMethod = "golden",
+    gradient: Callable[[np.ndarray], np.ndarray] | None = None,
+) -> MultiDimResult:
+    counted_f = FunctionCounter(lambda x: as_float(f(as_vector(x))))
+    x = as_vector(x0)
+    path = [x.copy()]
+    history = []
+    n = len(x)
+
+    for cycle in range(1, max_iter + 1):
+        previous = x.copy()
+        previous_f = counted_f(previous)
+
+        for coordinate in range(n):
+            direction = np.zeros(n)
+            direction[coordinate] = 1.0
+            alpha, ls_result = line_search_along(
+                counted_f,
+                x,
+                direction,
+                interval=line_search_interval,
+                eps=line_search_eps,
+                method=line_search_method,
+            )
+            x = x + alpha * direction
+            path.append(x.copy())
+            history.append(
+                {
+                    "iteration": cycle,
+                    "coordinate": coordinate,
+                    "alpha": alpha,
+                    "x": x.copy(),
+                    "f_x": counted_f(x),
+                    "line_search_calls": getattr(ls_result, "function_calls", 0),
+                }
+            )
+
+        current_f = counted_f(x)
+        if vector_norm(x - previous) <= eps or abs(current_f - previous_f) <= eps:
+            break
+
+    grad_norm = None if gradient is None else vector_norm(gradient(x))
+    return MultiDimResult(
+        method="Coordinate descent",
+        x_min=x,
+        f_min=counted_f(x),
+        iterations=cycle,
+        function_calls=counted_f.calls,
+        gradient_norm=grad_norm,
+        path=path,
+        history=history,
+    )
+
+
+def gradient_descent(
+    f: Callable[[np.ndarray], float],
+    gradient: Callable[[np.ndarray], np.ndarray],
+    x0,
+    strategy: GradientStrategy = "backtracking",
+    eps: float = 1e-5,
+    max_iter: int = 500,
+    step: float = 0.01,
+    initial_step: float = 1.0,
+    shrinkage: float = 0.5,
+    armijo: float = 0.25,
+    line_search_interval: tuple[float, float] = (0.0, 2.0),
+    line_search_eps: float = 1e-5,
+    line_search_method: LineSearchMethod = "golden",
+) -> MultiDimResult:
+    counted_f = FunctionCounter(lambda x: as_float(f(as_vector(x))))
+    x = as_vector(x0)
+    path = [x.copy()]
+    history = []
+
+    for iteration in range(1, max_iter + 1):
+        grad = as_vector(gradient(x))
+        grad_norm = vector_norm(grad)
+        f_x = counted_f(x)
+        if grad_norm <= eps:
+            break
+
+        direction = -grad
+        if strategy == "fixed":
+            alpha = step
+        elif strategy == "scheduled":
+            alpha = initial_step / iteration
+        elif strategy == "steepest":
+            alpha, _ = line_search_along(
+                counted_f,
+                x,
+                direction,
+                interval=line_search_interval,
+                eps=line_search_eps,
+                method=line_search_method,
+            )
+        elif strategy == "backtracking":
+            alpha = initial_step
+            while alpha > 1e-14:
+                candidate = x + alpha * direction
+                if counted_f(candidate) - f_x <= -alpha * armijo * grad_norm**2:
+                    break
+                alpha *= shrinkage
+        else:
+            raise ValueError(f"Unknown gradient strategy: {strategy}")
+
+        x_next = x + alpha * direction
+        f_next = counted_f(x_next)
+        history.append(
+            {
+                "iteration": iteration,
+                "alpha": alpha,
+                "x": x_next.copy(),
+                "f_x": f_next,
+                "gradient_norm": grad_norm,
+                "direction": direction.copy(),
+            }
+        )
+        path.append(x_next.copy())
+
+        if vector_norm(x_next - x) <= eps or abs(f_next - f_x) <= eps:
+            x = x_next
+            break
+        x = x_next
+
+    final_grad_norm = vector_norm(gradient(x))
+    return MultiDimResult(
+        method=f"Gradient descent: {strategy}",
+        x_min=x,
+        f_min=counted_f(x),
+        iterations=len(history),
+        function_calls=counted_f.calls,
+        gradient_norm=final_grad_norm,
+        path=path,
+        history=history,
+    )
+
+
+def conjugate_gradient(
+    f: Callable[[np.ndarray], float],
+    gradient: Callable[[np.ndarray], np.ndarray],
+    x0,
+    formula: ConjugateFormula = "fletcher_reeves",
+    eps: float = 1e-5,
+    max_iter: int = 500,
+    line_search_interval: tuple[float, float] = (0.0, 2.0),
+    line_search_eps: float = 1e-5,
+    line_search_method: LineSearchMethod = "golden",
+) -> MultiDimResult:
+    counted_f = FunctionCounter(lambda x: as_float(f(as_vector(x))))
+    x = as_vector(x0)
+    grad = as_vector(gradient(x))
+    direction = -grad
+    n = len(x)
+    path = [x.copy()]
+    history = []
+
+    for iteration in range(1, max_iter + 1):
+        grad_norm = vector_norm(grad)
+        if grad_norm <= eps:
+            break
+
+        alpha, _ = line_search_along(
+            counted_f,
+            x,
+            direction,
+            interval=line_search_interval,
+            eps=line_search_eps,
+            method=line_search_method,
+        )
+        x_next = x + alpha * direction
+        grad_next = as_vector(gradient(x_next))
+        denominator = float(np.dot(grad, grad))
+        if denominator <= 1e-30 or iteration % n == 0:
+            beta = 0.0
+        elif formula == "fletcher_reeves":
+            beta = float(np.dot(grad_next, grad_next) / denominator)
+        elif formula == "polak_ribiere":
+            beta = float(np.dot(grad_next, grad_next - grad) / denominator)
+            beta = max(0.0, beta)
+        else:
+            raise ValueError(f"Unknown conjugate gradient formula: {formula}")
+
+        direction_next = -grad_next + beta * direction
+        history.append(
+            {
+                "iteration": iteration,
+                "alpha": alpha,
+                "beta": beta,
+                "x": x_next.copy(),
+                "f_x": counted_f(x_next),
+                "gradient_norm": grad_norm,
+                "direction": direction.copy(),
+            }
+        )
+        path.append(x_next.copy())
+
+        if vector_norm(x_next - x) <= eps:
+            x = x_next
+            grad = grad_next
+            break
+        x, grad, direction = x_next, grad_next, direction_next
+
+    return MultiDimResult(
+        method=f"Conjugate gradient: {formula}",
+        x_min=x,
+        f_min=counted_f(x),
+        iterations=len(history),
+        function_calls=counted_f.calls,
+        gradient_norm=vector_norm(gradient(x)),
+        path=path,
+        history=history,
+    )
+
+
+def newton_method(
+    f: Callable[[np.ndarray], float],
+    gradient: Callable[[np.ndarray], np.ndarray],
+    hessian: Callable[[np.ndarray], np.ndarray],
+    x0,
+    eps: float = 1e-5,
+    max_iter: int = 100,
+    modified: bool = True,
+    line_search_interval: tuple[float, float] = (0.0, 1.0),
+    line_search_eps: float = 1e-5,
+    line_search_method: LineSearchMethod = "golden",
+) -> MultiDimResult:
+    counted_f = FunctionCounter(lambda x: as_float(f(as_vector(x))))
+    x = as_vector(x0)
+    path = [x.copy()]
+    history = []
+
+    for iteration in range(1, max_iter + 1):
+        grad = as_vector(gradient(x))
+        grad_norm = vector_norm(grad)
+        if grad_norm <= eps:
+            break
+
+        hess = np.asarray(hessian(x), dtype=float)
+        try:
+            direction = np.linalg.solve(hess, -grad)
+        except np.linalg.LinAlgError:
+            direction = -grad
+
+        if float(np.dot(direction, grad)) >= 0:
+            direction = -grad
+
+        if modified:
+            alpha, _ = line_search_along(
+                counted_f,
+                x,
+                direction,
+                interval=line_search_interval,
+                eps=line_search_eps,
+                method=line_search_method,
+            )
+        else:
+            alpha = 1.0
+
+        x_next = x + alpha * direction
+        history.append(
+            {
+                "iteration": iteration,
+                "alpha": alpha,
+                "x": x_next.copy(),
+                "f_x": counted_f(x_next),
+                "gradient_norm": grad_norm,
+                "direction": direction.copy(),
+            }
+        )
+        path.append(x_next.copy())
+
+        if vector_norm(x_next - x) <= eps:
+            x = x_next
+            break
+        x = x_next
+
+    return MultiDimResult(
+        method="Modified Newton" if modified else "Newton",
+        x_min=x,
+        f_min=counted_f(x),
+        iterations=len(history),
+        function_calls=counted_f.calls,
+        gradient_norm=vector_norm(gradient(x)),
+        path=path,
+        history=history,
+    )
