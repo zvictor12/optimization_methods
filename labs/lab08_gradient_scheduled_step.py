@@ -18,7 +18,7 @@ def main() -> None:
         parsed.gradient,
         x0=[1.5, -1.0],
         strategy="scheduled",
-        initial_step=0.2,
+        initial_step=1.0,
         eps=1e-5,
         max_iter=500,
     )

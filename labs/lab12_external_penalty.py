@@ -11,12 +11,18 @@ from optimization_methods.visualization import plot_2d_path, save_figure
 
 
 def main() -> None:
-    parsed = build_multivariate_function("x**2 + y**2", ["x", "y"])
-    constraint = build_multivariate_function("2*x + y + 4", ["x", "y"])
+    parsed = build_multivariate_function("100*(y - x**2)**2 + (1 - x)**2", ["x", "y"])
+    constraints = [
+        build_multivariate_function("x + 2*y - 1", ["x", "y"]),
+        build_multivariate_function("x**2 + y - 1", ["x", "y"]),
+        build_multivariate_function("x**2 - y - 1", ["x", "y"]),
+    ]
     result = external_penalty_method(
         parsed.f,
-        x0=[1.0, 1.0],
-        inequality_constraints=[constraint.f],
+        parsed.gradient,
+        x0=[0.5, 0.0],
+        inequality_constraints=[constraint.f for constraint in constraints],
+        inequality_gradients=[constraint.gradient for constraint in constraints],
         eps=1e-4,
         inner_eps=1e-5,
         initial_r=1.0,
@@ -26,7 +32,7 @@ def main() -> None:
     print_multi_dim_result(result)
     print_path(result)
     figure = plot_2d_path(parsed.f, parsed.gradient, result.path, title="External penalty")
-    print(f"Plot: {save_figure(figure, 'outputs/lab14_external_penalty.png')}")
+    print(f"Plot: {save_figure(figure, 'outputs/lab12_external_penalty.png')}")
 
 
 if __name__ == "__main__":

@@ -5,7 +5,6 @@ import pandas as pd
 import streamlit as st
 
 from optimization_methods.constrained import (
-    conditional_gradient_method,
     external_penalty_method,
     internal_penalty_method,
 )
@@ -33,22 +32,12 @@ def parse_float_list(text: str) -> list[float]:
     return [float(item.strip()) for item in text.split(",") if item.strip()]
 
 
-def parse_bounds(text: str) -> list[tuple[float, float]]:
-    bounds = []
-    for part in text.split(";"):
-        if not part.strip():
-            continue
-        lower, upper = parse_float_list(part)
-        bounds.append((lower, upper))
-    return bounds
-
-
 def build_constraints(text: str, variables: list[str]):
     constraints = []
     for line in text.splitlines():
         expression = line.strip()
         if expression:
-            constraints.append(build_multivariate_function(expression, variables).f)
+            constraints.append(build_multivariate_function(expression, variables))
     return constraints
 
 
@@ -85,15 +74,12 @@ def run_one_dimensional() -> None:
     if method == "Passive search":
         segments = st.number_input("segments", value=0, min_value=0, step=1)
 
+    if not st.button("Run", key="run_one"):
+        return
+
     parsed = build_scalar_function(expression)
     if method == "Passive search":
-        result = passive_search(
-            parsed.f,
-            a,
-            b,
-            eps=tolerance,
-            segments=None if segments == 0 else int(segments),
-        )
+        result = passive_search(parsed.f, a, b, eps=tolerance, segments=None if segments == 0 else int(segments))
     elif method == "Dichotomy":
         result = dichotomy_search(parsed.f, a, b, eps=tolerance, delta=delta)
     elif method == "Golden section":
@@ -131,19 +117,11 @@ def run_multidimensional() -> None:
             "Gradient: scheduled step",
             "Steepest gradient descent",
             "Fletcher-Reeves",
-            "Polak-Ribiere",
             "Modified Newton",
             "External penalty",
             "Internal penalty",
-            "Conditional gradient",
         ],
     )
-
-    parsed = build_multivariate_function(expression, variables)
-    x0 = parse_float_list(x0_text)
-    if len(x0) != len(variables):
-        st.error("x0 length must match variables length.")
-        return
 
     params = st.columns(4)
     tolerance = params[0].number_input("eps", value=1e-5, min_value=1e-12, format="%.8f")
@@ -157,17 +135,11 @@ def run_multidimensional() -> None:
     else:
         constraints = []
 
-    if method == "Conditional gradient":
-        feasible_kind = st.selectbox("Feasible set", ["box", "ball"])
-        if feasible_kind == "box":
-            bounds_text = st.text_input("bounds: lower,upper; lower,upper", "-1,2; -2,1")
-            feasible_set = ("box", parse_bounds(bounds_text))
-        else:
-            center_text = st.text_input("ball center", "2,2")
-            radius = st.number_input("ball radius", value=2.828427, min_value=1e-12)
-            feasible_set = ("ball", (parse_float_list(center_text), radius))
-    else:
-        feasible_set = None
+    if not st.button("Run", key="run_multi"):
+        return
+
+    parsed = build_multivariate_function(expression, variables)
+    x0 = parse_float_list(x0_text)
 
     if method == "Coordinate descent":
         result = coordinate_descent(
@@ -225,17 +197,6 @@ def run_multidimensional() -> None:
             parsed.f,
             parsed.gradient,
             x0,
-            formula="fletcher_reeves",
-            line_search_interval=(0.0, line_max),
-            eps=tolerance,
-            max_iter=int(max_iter),
-        )
-    elif method == "Polak-Ribiere":
-        result = conjugate_gradient(
-            parsed.f,
-            parsed.gradient,
-            x0,
-            formula="polak_ribiere",
             line_search_interval=(0.0, line_max),
             eps=tolerance,
             max_iter=int(max_iter),
@@ -253,29 +214,24 @@ def run_multidimensional() -> None:
     elif method == "External penalty":
         result = external_penalty_method(
             parsed.f,
+            parsed.gradient,
             x0,
-            inequality_constraints=constraints,
-            eps=tolerance,
-            inner_eps=tolerance,
-            max_outer_iter=int(max_iter),
-        )
-    elif method == "Internal penalty":
-        result = internal_penalty_method(
-            parsed.f,
-            x0,
-            inequality_constraints=constraints,
+            inequality_constraints=[constraint.f for constraint in constraints],
+            inequality_gradients=[constraint.gradient for constraint in constraints],
             eps=tolerance,
             inner_eps=tolerance,
             max_outer_iter=int(max_iter),
         )
     else:
-        result = conditional_gradient_method(
+        result = internal_penalty_method(
             parsed.f,
             parsed.gradient,
             x0,
-            feasible_set=feasible_set,
+            inequality_constraints=[constraint.f for constraint in constraints],
+            inequality_gradients=[constraint.gradient for constraint in constraints],
             eps=tolerance,
-            max_iter=int(max_iter),
+            inner_eps=tolerance,
+            max_outer_iter=int(max_iter),
         )
 
     metric_columns = st.columns(4)
@@ -317,8 +273,8 @@ def main() -> None:
             run_one_dimensional()
         else:
             run_multidimensional()
-    except Exception as exc:
-        st.error(str(exc))
+    except Exception:
+        st.error("sth went wrong")
 
 
 if __name__ == "__main__":

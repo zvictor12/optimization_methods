@@ -11,10 +11,10 @@ from optimization_methods.visualization import plot_1d_function, save_figure
 
 
 def main() -> None:
-    parsed = build_scalar_function("x + 2/x")
-    result = golden_section_search(parsed.f, a=0.5, b=3.5, eps=0.001)
+    parsed = build_scalar_function("(x - 2)*x*(x + 2)**2")
+    result = golden_section_search(parsed.f, a=0.0, b=3.0, eps=0.001)
     print_one_dim_result(result)
-    figure = plot_1d_function(parsed.f, 0.5, 3.5, result.x_min)
+    figure = plot_1d_function(parsed.f, 0.0, 3.0, result.x_min)
     print(f"Plot: {save_figure(figure, 'outputs/lab03_golden_section.png')}")
 
 

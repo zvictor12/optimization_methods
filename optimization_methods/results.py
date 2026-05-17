@@ -16,9 +16,6 @@ class OneDimResult:
     function_calls: int
     history: list[dict[str, Any]] = field(default_factory=list)
 
-    def rows(self) -> list[dict[str, Any]]:
-        return self.history
-
 
 @dataclass(slots=True)
 class MultiDimResult:
@@ -36,9 +33,6 @@ class MultiDimResult:
             return np.empty((0, 0))
         return np.vstack(self.path)
 
-    def rows(self) -> list[dict[str, Any]]:
-        return self.history
-
 
 class FunctionCounter:
     def __init__(self, function):
@@ -51,10 +45,7 @@ class FunctionCounter:
 
 
 def as_float(value) -> float:
-    array = np.asarray(value, dtype=float)
-    if array.shape == ():
-        return float(array)
-    return float(array.reshape(-1)[0])
+    return float(np.asarray(value, dtype=float).reshape(-1)[0])
 
 
 def as_vector(values) -> np.ndarray:

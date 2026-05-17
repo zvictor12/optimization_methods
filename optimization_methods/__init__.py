@@ -1,7 +1,6 @@
 """Optimization methods used by the laboratory scripts and the app."""
 
 from optimization_methods.constrained import (
-    conditional_gradient_method,
     external_penalty_method,
     internal_penalty_method,
 )
@@ -25,7 +24,6 @@ from optimization_methods.parsing import (
 __all__ = [
     "build_multivariate_function",
     "build_scalar_function",
-    "conditional_gradient_method",
     "conjugate_gradient",
     "coordinate_descent",
     "dichotomy_search",

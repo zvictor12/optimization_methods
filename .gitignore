@@ -7,3 +7,5 @@ outputs/
 *.egg-info/
 /.codex
 /.agents
+/tests
+/.pytest_cache

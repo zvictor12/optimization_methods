@@ -17,7 +17,6 @@ def main() -> None:
         parsed.f,
         parsed.gradient,
         x0=[1.5, -1.0],
-        formula="fletcher_reeves",
         line_search_interval=(0.0, 1.0),
         eps=1e-5,
         max_iter=120,

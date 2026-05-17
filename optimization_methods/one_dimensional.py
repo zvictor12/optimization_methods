@@ -14,11 +14,7 @@ def passive_search(
     segments: int | None = None,
 ) -> OneDimResult:
     if segments is None:
-        if eps is None or eps <= 0:
-            raise ValueError("Either positive eps or segments must be provided.")
         segments = max(1, ceil((b - a) / eps))
-    if segments <= 0:
-        raise ValueError("segments must be positive.")
 
     counted_f = FunctionCounter(lambda x: as_float(f(x)))
     step = (b - a) / segments
@@ -69,13 +65,6 @@ def dichotomy_search(
     delta: float = 1e-5,
     max_iter: int = 10_000,
 ) -> OneDimResult:
-    if eps <= 0:
-        raise ValueError("eps must be positive.")
-    if delta <= 0:
-        raise ValueError("delta must be positive.")
-    if delta >= 2 * eps:
-        raise ValueError("delta must be smaller than 2 * eps.")
-
     counted_f = FunctionCounter(lambda x: as_float(f(x)))
     left, right = float(a), float(b)
     history = []
@@ -130,9 +119,6 @@ def golden_section_search(
     eps: float = 1e-4,
     max_iter: int = 10_000,
 ) -> OneDimResult:
-    if eps <= 0:
-        raise ValueError("eps must be positive.")
-
     counted_f = FunctionCounter(lambda x: as_float(f(x)))
     left, right = float(a), float(b)
     tau = (sqrt(5) - 1) / 2
@@ -200,9 +186,6 @@ def fibonacci_search(
     b: float,
     eps: float = 1e-4,
 ) -> OneDimResult:
-    if eps <= 0:
-        raise ValueError("eps must be positive.")
-
     counted_f = FunctionCounter(lambda x: as_float(f(x)))
     left, right = float(a), float(b)
     target = (right - left) / eps

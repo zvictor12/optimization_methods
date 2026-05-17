@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Literal
 
 import numpy as np
 
@@ -12,10 +11,6 @@ from optimization_methods.one_dimensional import (
     passive_search,
 )
 from optimization_methods.results import FunctionCounter, MultiDimResult, as_float, as_vector
-
-LineSearchMethod = Literal["golden", "dichotomy", "fibonacci", "passive"]
-GradientStrategy = Literal["fixed", "backtracking", "scheduled", "steepest"]
-ConjugateFormula = Literal["fletcher_reeves", "polak_ribiere"]
 
 
 def vector_norm(x: np.ndarray) -> float:
@@ -28,15 +23,10 @@ def line_search_along(
     direction: np.ndarray,
     interval: tuple[float, float] = (0.0, 2.0),
     eps: float = 1e-5,
-    method: LineSearchMethod = "golden",
+    method: str = "golden",
 ) -> tuple[float, object]:
     start, end = interval
-    if start >= end:
-        raise ValueError("line search interval must satisfy start < end.")
-
     direction = as_vector(direction)
-    if vector_norm(direction) == 0:
-        return 0.0, None
 
     def phi(alpha: float) -> float:
         return as_float(f(x + alpha * direction))
@@ -61,7 +51,7 @@ def coordinate_descent(
     max_iter: int = 200,
     line_search_interval: tuple[float, float] = (-2.0, 2.0),
     line_search_eps: float = 1e-5,
-    line_search_method: LineSearchMethod = "golden",
+    line_search_method: str = "golden",
     gradient: Callable[[np.ndarray], np.ndarray] | None = None,
 ) -> MultiDimResult:
     counted_f = FunctionCounter(lambda x: as_float(f(as_vector(x))))
@@ -119,7 +109,7 @@ def gradient_descent(
     f: Callable[[np.ndarray], float],
     gradient: Callable[[np.ndarray], np.ndarray],
     x0,
-    strategy: GradientStrategy = "backtracking",
+    strategy: str = "backtracking",
     eps: float = 1e-5,
     max_iter: int = 500,
     step: float = 0.01,
@@ -128,7 +118,7 @@ def gradient_descent(
     armijo: float = 0.25,
     line_search_interval: tuple[float, float] = (0.0, 2.0),
     line_search_eps: float = 1e-5,
-    line_search_method: LineSearchMethod = "golden",
+    line_search_method: str = "golden",
 ) -> MultiDimResult:
     counted_f = FunctionCounter(lambda x: as_float(f(as_vector(x))))
     x = as_vector(x0)
@@ -164,7 +154,7 @@ def gradient_descent(
                     break
                 alpha *= shrinkage
         else:
-            raise ValueError(f"Unknown gradient strategy: {strategy}")
+            alpha = step
 
         x_next = x + alpha * direction
         f_next = counted_f(x_next)
@@ -202,12 +192,11 @@ def conjugate_gradient(
     f: Callable[[np.ndarray], float],
     gradient: Callable[[np.ndarray], np.ndarray],
     x0,
-    formula: ConjugateFormula = "fletcher_reeves",
     eps: float = 1e-5,
     max_iter: int = 500,
     line_search_interval: tuple[float, float] = (0.0, 2.0),
     line_search_eps: float = 1e-5,
-    line_search_method: LineSearchMethod = "golden",
+    line_search_method: str = "golden",
 ) -> MultiDimResult:
     counted_f = FunctionCounter(lambda x: as_float(f(as_vector(x))))
     x = as_vector(x0)
@@ -235,13 +224,8 @@ def conjugate_gradient(
         denominator = float(np.dot(grad, grad))
         if denominator <= 1e-30 or iteration % n == 0:
             beta = 0.0
-        elif formula == "fletcher_reeves":
-            beta = float(np.dot(grad_next, grad_next) / denominator)
-        elif formula == "polak_ribiere":
-            beta = float(np.dot(grad_next, grad_next - grad) / denominator)
-            beta = max(0.0, beta)
         else:
-            raise ValueError(f"Unknown conjugate gradient formula: {formula}")
+            beta = float(np.dot(grad_next, grad_next) / denominator)
 
         direction_next = -grad_next + beta * direction
         history.append(
@@ -264,7 +248,7 @@ def conjugate_gradient(
         x, grad, direction = x_next, grad_next, direction_next
 
     return MultiDimResult(
-        method=f"Conjugate gradient: {formula}",
+        method="Fletcher-Reeves",
         x_min=x,
         f_min=counted_f(x),
         iterations=len(history),
@@ -285,7 +269,7 @@ def newton_method(
     modified: bool = True,
     line_search_interval: tuple[float, float] = (0.0, 1.0),
     line_search_eps: float = 1e-5,
-    line_search_method: LineSearchMethod = "golden",
+    line_search_method: str = "golden",
 ) -> MultiDimResult:
     counted_f = FunctionCounter(lambda x: as_float(f(as_vector(x))))
     x = as_vector(x0)
@@ -299,13 +283,7 @@ def newton_method(
             break
 
         hess = np.asarray(hessian(x), dtype=float)
-        try:
-            direction = np.linalg.solve(hess, -grad)
-        except np.linalg.LinAlgError:
-            direction = -grad
-
-        if float(np.dot(direction, grad)) >= 0:
-            direction = -grad
+        direction = np.linalg.solve(hess, -grad)
 
         if modified:
             alpha, _ = line_search_along(
